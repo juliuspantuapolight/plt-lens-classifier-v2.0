@@ -1,0 +1,10 @@
+torch>=2.4
+torchvision>=0.19
+transformers>=4.45,<5.0
+accelerate>=0.34
+albumentations>=1.4
+opencv-python>=4.10
+Pillow>=10.4
+numpy>=1.26
+PyYAML>=6.0
+pytest>=8.3

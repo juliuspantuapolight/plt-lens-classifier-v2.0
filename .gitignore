@@ -1,0 +1,32 @@
+# Local environments and Python caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local tools and credentials
+.agents/
+.codex/
+.aws/
+.env
+.env.*
+!.env.example
+
+# Datasets, trained models, and generated inspection artifacts
+/assets/
+/data/
+/models/
+/outputs/
+/*_annotated.jpg
+/*_annotated.png
+*.zip
+*.log
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
