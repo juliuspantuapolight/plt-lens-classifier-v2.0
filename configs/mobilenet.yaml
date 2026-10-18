@@ -1,0 +1,12 @@
+seed: 42
+data:
+  dataset_dir: data/slots-v2
+model:
+  image_size: 224
+  output_dir: models/tlens-mobilenet
+training:
+  epochs: 10
+  batch_size: 32
+  learning_rate: 0.0002
+  num_workers: 0
+  cpu_threads: 4

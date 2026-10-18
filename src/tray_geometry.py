@@ -10,7 +10,8 @@ import numpy as np
 TRAY_CONFIGS = {
     "packaged": {"rows": 17, "columns": 15, "left": 0.09, "right": 0.91, "top": 0.075, "bottom": 0.915,
                  "always_empty": ((1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2))},
-    "bare": {"rows": 20, "columns": 20, "left": 0.08, "right": 0.92, "top": 0.079, "bottom": 0.918},
+    "bare": {"rows": 20, "columns": 20, "left": 0.08, "right": 0.92, "top": 0.079, "bottom": 0.918,
+             "excluded": tuple((row, column) for row in range(1, 7) for column in range(1, 5))},
 }
 
 

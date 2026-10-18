@@ -29,7 +29,7 @@ class SlotDataset(Dataset):
     def __getitem__(self, index: int) -> dict:
         path, label = self.records[index]; image = np.asarray(Image.open(path).convert("RGB"))
         if self.transforms: image = self.transforms(image=image)["image"]
-        encoded = self.processor(images=image, return_tensors="pt")
+        encoded = self.processor(images=[image], return_tensors="pt")
         return {"pixel_values": encoded["pixel_values"].squeeze(0), "labels": label}
 
 
