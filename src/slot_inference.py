@@ -18,7 +18,12 @@ from src.image_quality import assess_blur
 from src.inspection_io import collect_input_images, inspection_output_paths
 from src.inspection_rendering import AnnotationLayout
 from src.sticker_qr import read_sticker_qr
-from src.tray_geometry import TRAY_CONFIGS, align_tray, extract_slots, recenter_slot_apertures
+from src.tray_geometry import TRAY_CONFIGS, align_tray, detect_tray_type, extract_slots, recenter_slot_apertures
+
+
+def full_frame_corners(image: np.ndarray) -> np.ndarray:
+    height, width = image.shape[:2]
+    return np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
 
 
 class SlotInspector:
@@ -70,10 +75,7 @@ class SlotInspector:
         if image is None: raise ValueError(f"Unreadable image: {path}")
         timings["image_read"] = time.perf_counter() - started
         started = time.perf_counter()
-        height, width = image.shape[:2]; corners = None
-        if full_frame:
-            corners = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
-        alignment = align_tray(image, corners=corners); slots = extract_slots(alignment, tray_type)
+        alignment = align_tray(image, corners=full_frame_corners(image) if full_frame else None); slots = extract_slots(alignment, tray_type)
         timings["alignment_and_crops"] = time.perf_counter() - started
         started = time.perf_counter()
         sticker = read_sticker_qr(image, alignment, tray_type)
@@ -120,7 +122,11 @@ class SlotInspector:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(); parser.add_argument("--model-dir", type=Path, default=Path("models/tlens-dinov2")); parser.add_argument("--image", type=Path); parser.add_argument("--input-dir", type=Path); parser.add_argument("--tray-type", choices=tuple(TRAY_CONFIGS), required=True); parser.add_argument("--output-dir", type=Path, default=Path("outputs/inspection")); parser.add_argument("--confidence", type=float, default=.8); parser.add_argument("--batch-size", type=int, default=32); parser.add_argument("--blur-threshold", type=float, default=100.); parser.add_argument("--full-frame", action="store_true"); parser.add_argument("--recenter-apertures", action="store_true"); parser.add_argument("--dark-housing-threshold", type=float)
+    parser = argparse.ArgumentParser(); parser.add_argument("--model-dir", type=Path, default=Path("models/tlens-dinov2")); parser.add_argument("--image", type=Path); parser.add_argument("--input-dir", type=Path); parser.add_argument("--tray-type", choices=(*TRAY_CONFIGS, "auto"), required=True, help="auto detects each image's tray type from its grid pitch"); parser.add_argument("--output-dir", type=Path, default=Path("outputs/inspection")); parser.add_argument("--confidence", type=float, default=.8); parser.add_argument("--batch-size", type=int, default=32); parser.add_argument("--blur-threshold", type=float, default=100.); parser.add_argument("--full-frame", action="store_true"); parser.add_argument("--dark-housing-threshold", type=float)
+    parser.add_argument("--recenter-apertures", nargs="*", choices=tuple(TRAY_CONFIGS),
+                        help="Recenter on visible apertures; optionally list the tray types to apply it to (default: all)")
+    for tray_type in TRAY_CONFIGS:
+        parser.add_argument(f"--{tray_type}-model-dir", type=Path, help=f"Model for {tray_type} trays with --tray-type auto")
     parser.add_argument("--cpu-int8", action="store_true", help="Use dynamic INT8 linear layers on CPU; validate accuracy before production use.")
     parser.add_argument("--cpu-threads", type=int, help="Override PyTorch CPU threads (positive integer).")
     parser.add_argument("--summary", action="store_true", help="Print counts and timing instead of the full JSON; saved reports remain complete.")
@@ -128,6 +134,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.batch_size < 1 or (args.cpu_threads is not None and args.cpu_threads < 1):
         parser.error("--batch-size and --cpu-threads must be positive.")
     if bool(args.image) == bool(args.input_dir): parser.error("Specify exactly one of --image or --input-dir.")
+    auto = args.tray_type == "auto"
+    model_dirs = {tray_type: getattr(args, f"{tray_type}_model_dir") for tray_type in TRAY_CONFIGS} if auto else {args.tray_type: args.model_dir}
+    if not all(model_dirs.values()):
+        parser.error("--tray-type auto needs " + " and ".join(f"--{tray_type}-model-dir" for tray_type in TRAY_CONFIGS) + ".")
     try:
         paths = [args.image] if args.image else collect_input_images(args.input_dir, args.output_dir)
     except ValueError as error:
@@ -137,13 +147,35 @@ def main(argv: list[str] | None = None) -> None:
     stem_counts = Counter(path.stem.casefold() for path in paths)
     if args.input_dir:
         print(f"Found {len(paths)} input images in {args.input_dir} (including subfolders).", file=sys.stderr)
-    started = time.perf_counter()
-    inspector = SlotInspector(args.model_dir, args.confidence, args.batch_size, args.cpu_int8, args.cpu_threads)
-    print(f"Model ready in {time.perf_counter() - started:.2f}s on {inspector.device} "
-          f"({'INT8' if args.cpu_int8 else 'FP32'}).", file=sys.stderr)
-    args.output_dir.mkdir(parents=True, exist_ok=True); results = []
+    inspectors = {}
+
+    def inspector_for(tray_type: str) -> SlotInspector:
+        # Each model loads once, on first use, so a single-type folder loads only one.
+        if tray_type not in inspectors:
+            started = time.perf_counter()
+            inspectors[tray_type] = SlotInspector(model_dirs[tray_type], args.confidence, args.batch_size, args.cpu_int8, args.cpu_threads)
+            print(f"{tray_type.capitalize()} model ready in {time.perf_counter() - started:.2f}s on {inspectors[tray_type].device} "
+                  f"({'INT8' if args.cpu_int8 else 'FP32'}).", file=sys.stderr)
+        return inspectors[tray_type]
+
+    args.output_dir.mkdir(parents=True, exist_ok=True); results = []; undetected = []
     for path in paths:
-        started = time.perf_counter(); result, rendered = inspector.inspect(path, args.tray_type, args.full_frame, args.blur_threshold, args.recenter_apertures, args.dark_housing_threshold); result["inference_seconds"] = round(time.perf_counter() - started, 4)
+        started = time.perf_counter()
+        tray_type = args.tray_type
+        if auto:
+            image = cv2.imread(str(path))
+            if image is None: raise ValueError(f"Unreadable image: {path}")
+            tray_type = detect_tray_type(align_tray(image, corners=full_frame_corners(image) if args.full_frame else None).normalized)
+            if tray_type is None:
+                undetected.append(path)
+                print(f"{path.name}: SKIPPED - tray type not detected; rerun with an explicit tray type.", file=sys.stderr)
+                continue
+        recenter = args.recenter_apertures is not None and (not args.recenter_apertures or tray_type in args.recenter_apertures)
+        detection_seconds = time.perf_counter() - started
+        inspector = inspector_for(tray_type); started = time.perf_counter() - detection_seconds  # exclude one-time model load
+        result, rendered = inspector.inspect(path, tray_type, args.full_frame, args.blur_threshold, recenter, args.dark_housing_threshold)
+        result["tray_type_source"] = "auto" if auto else "manual"
+        result["inference_seconds"] = round(time.perf_counter() - started, 4)
         output_name = path
         if stem_counts[path.stem.casefold()] > 1:
             # Distinguish repeated basenames without changing the reported source path.
@@ -157,12 +189,14 @@ def main(argv: list[str] | None = None) -> None:
         result["result_json"] = str(json_output)
         json_output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         if args.summary:
-            print(f"{path.name}: Lot={result['lot_number'] or 'unreadable'} TLens={result['occupied_count']} Empty={result['empty_count']} "
+            print(f"{path.name}: Tray={tray_type} Lot={result['lot_number'] or 'unreadable'} TLens={result['occupied_count']} Empty={result['empty_count']} "
                   f"Uncertain={result['uncertain_count']} Excluded={result['excluded_count']} time={result['inference_seconds']:.2f}s")
         else:
             results.append(result)
     if not args.summary:
         print(json.dumps(results, indent=2))
+    if undetected:
+        sys.exit(f"{len(undetected)} image(s) skipped because the tray type was not detected: " + ", ".join(path.name for path in undetected))
 
 
 if __name__ == "__main__": main()

@@ -17,37 +17,50 @@ Supported tray types:
 
 ## Quick inspection
 
-From the project root, activate the environment once:
+Dependencies are managed with [uv](https://docs.astral.sh/uv/). From the project
+root, create or update `.venv` from `uv.lock` once:
 
 ```bash
-source .venv/bin/activate
+uv sync
 ```
 
-Then provide the tray type and image:
+Then either prefix commands with `uv run` (for example `uv run python run.py ...`,
+`uv run pytest`) or activate `.venv` (`source .venv/bin/activate` on Linux,
+`.venv\Scripts\activate` on Windows).
+
+Then provide an image or folder. The tray type is detected per image:
 
 ```bash
-python run.py bare "assets/bare/2026-10-01-02-05-13-2638008/O911A-2638008-001.jpg"
-python run.py packaged "assets/2026-10-07-02-00-33-2633011/A501B-2633011-001.jpg"
+python run.py "assets/bare/2026-10-01-02-05-13-2638008/O911A-2638008-001.jpg"
+python run.py "assets"
 ```
 
-You can also pass a directory to process multiple images with one model load:
+Detection compares the slot pitch along both axes with the calibrated grids
+(bare about 71 x 71 px, packaged about 94 x 84 px in the 1600 px aligned frame).
+An image that matches neither is skipped with a message, and the run exits with
+an error listing those images; rerun them with an explicit tray type. JSON
+records `tray_type_source: "auto"` or `"manual"`.
+
+You can still give the tray type explicitly, which skips detection:
 
 ```bash
 python run.py bare "assets/bare"
-python run.py packaged "assets/2026-10-07-02-00-12-2633006"
+python run.py packaged "assets/2026-10-07-02-00-33-2633011/A501B-2633011-001.jpg"
 ```
 
-Folder mode scans all subfolders and loads the model once. It skips files ending
+Folder mode scans all subfolders and loads each tray type's model once, on
+first use, so a folder may mix bare and packaged trays. It skips files ending
 in `_annotated`, `-annotated`, `_inspection`, or `-inspection`, and skips the
 output directory. Supported extensions: JPG, JPEG, PNG, BMP, TIF, TIFF, WEBP
-(case insensitive). Choose a folder containing one tray type.
+(case insensitive).
 
 Each image is saved under its decoded lot folder. Repeated input basenames get
 a stable path suffix to prevent overwriting each other's results. An empty
 folder reports an error before loading the model.
 
-The runner selects the corresponding MobileNet model, uses full-frame alignment,
-enables aperture recentering for bare trays, uses four CPU threads, and prints a
+The runner selects the corresponding MobileNet model (`--model-dir` requires an
+explicit tray type), uses full-frame alignment, enables aperture recentering for
+bare trays, uses four CPU threads, and prints a
 short summary. Matching `<image>_inspection.jpg` and `<image>_inspection.json`
 files are saved in `outputs/mobilenet-inspection/<lot-number>/`.
 
@@ -98,7 +111,9 @@ python run.py --help
 ```
 
 The full `python -m src.slot_inference` command is also available for advanced
-options, including DINOv2 INT8 inference.
+options, including DINOv2 INT8 inference. It supports `--tray-type auto` with
+`--bare-model-dir` and `--packaged-model-dir`; `--recenter-apertures bare`
+limits recentering to bare trays.
 
 ## Train or continue training
 
@@ -128,7 +143,7 @@ Inspect a bare tray with `--tray-type bare`, `--model-dir models\tlens-dinov2-ba
 
 ## Faster CPU inspection on Linux
 
-Activate the existing environment with `source .venv/bin/activate`. Use optional
+Activate the environment created by `uv sync` with `source .venv/bin/activate`. Use optional
 dynamic INT8 inference to reduce CPU work without retraining or modifying model
 files:
 

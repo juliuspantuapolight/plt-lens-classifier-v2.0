@@ -1,0 +1,27 @@
+[project]
+name = "plt-lens-classifier"
+version = "2.0.0"
+description = "TLens tray slot inspection with OpenCV alignment and MobileNet/DINOv2 classifiers"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.4",
+    "torchvision>=0.19",
+    "transformers>=4.45,<5.0",
+    "accelerate>=0.34",
+    "albumentations>=1.4",
+    "opencv-python>=4.10",
+    "Pillow>=10.4",
+    "numpy>=1.26",
+    "PyYAML>=6.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.uv]
+# Scripts run from the repo root (`python -m src...`); nothing to build or install.
+package = false

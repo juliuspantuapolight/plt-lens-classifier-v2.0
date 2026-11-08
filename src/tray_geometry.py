@@ -93,6 +93,37 @@ def grid_centers(tray_type: str, image_shape: tuple[int, ...], geometry: dict | 
     return [(row + 1, column + 1, float(x), float(y)) for row, y in enumerate(ys) for column, x in enumerate(xs)]
 
 
+def _expected_pitches(tray_type: str, width: int, height: int) -> tuple[float, float]:
+    config = TRAY_CONFIGS[tray_type]
+    return ((config["right"] - config["left"]) * width / (config["columns"] - 1),
+            (config["bottom"] - config["top"]) * height / (config["rows"] - 1))
+
+
+def _dominant_period(profile: np.ndarray, shortest: float, longest: float) -> float:
+    window = int(2 * longest)
+    trend = np.convolve(profile, np.ones(window) / window, mode="valid")  # removes uneven lighting
+    detrended = (profile[window // 2:window // 2 + len(trend)] - trend) * np.hanning(len(trend))
+    spectrum, frequencies = np.abs(np.fft.rfft(detrended, 1 << 15)), np.fft.rfftfreq(1 << 15)
+    band = (frequencies > 1 / longest) & (frequencies < 1 / shortest)
+    return float(1 / frequencies[band][np.argmax(spectrum[band])])
+
+
+def detect_tray_type(normalized: np.ndarray, tolerance: float = 0.05) -> str | None:
+    """Match the dominant slot pitch on both axes to a calibrated grid; None when no tray type fits."""
+    height, width = normalized.shape[:2]
+    gray = cv2.cvtColor(normalized, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    region = gray[height // 12:-(height // 12), width // 12:-(width // 12)]
+    expected = {tray_type: _expected_pitches(tray_type, width, height) for tray_type in TRAY_CONFIGS}
+    pitches = [pitch for pair in expected.values() for pitch in pair]
+    shortest, longest = 0.75 * min(pitches), 1.25 * max(pitches)
+    column_pitch = _dominant_period(np.abs(cv2.Sobel(region, cv2.CV_32F, 1, 0, ksize=3)).mean(axis=0), shortest, longest)
+    row_pitch = _dominant_period(np.abs(cv2.Sobel(region, cv2.CV_32F, 0, 1, ksize=3)).mean(axis=1), shortest, longest)
+    for tray_type, (column_expected, row_expected) in expected.items():
+        if abs(column_pitch / column_expected - 1) < tolerance and abs(row_pitch / row_expected - 1) < tolerance:
+            return tray_type
+    return None
+
+
 def extract_slots(alignment: Alignment, tray_type: str, crop_scale: float = 0.72, geometry: dict | None = None) -> list[Slot]:
     centers = grid_centers(tray_type, alignment.normalized.shape, geometry)
     if len(centers) != TRAY_CONFIGS[tray_type]["rows"] * TRAY_CONFIGS[tray_type]["columns"]:
