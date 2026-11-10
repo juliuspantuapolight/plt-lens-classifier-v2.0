@@ -18,12 +18,8 @@ from src.image_quality import assess_blur
 from src.inspection_io import collect_input_images, inspection_output_paths
 from src.inspection_rendering import AnnotationLayout
 from src.sticker_qr import read_sticker_qr
-from src.tray_geometry import TRAY_CONFIGS, align_tray, detect_tray_type, extract_slots, recenter_slot_apertures
-
-
-def full_frame_corners(image: np.ndarray) -> np.ndarray:
-    height, width = image.shape[:2]
-    return np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
+from src.tray_geometry import (TRAY_CONFIGS, align_tray, detect_tray_type, extract_slots, full_frame_corners,
+                                recenter_slot_apertures)
 
 
 class SlotInspector:
@@ -68,7 +64,7 @@ class SlotInspector:
                 index = int(row.argmax()); results.append((self.model.config.id2label[index], float(row[index])))
         return results
 
-    def inspect(self, image_path: str | Path, tray_type: str, full_frame: bool, blur_threshold: float,
+    def inspect(self, image_path: str | Path, tray_type: str, full_frame: bool, blur_threshold: float | None,
                 recenter_apertures: bool = False, dark_housing_threshold: float | None = None) -> tuple[dict, np.ndarray]:
         timings = {}; started = time.perf_counter()
         path = Path(image_path); image = cv2.imread(str(path))
@@ -108,8 +104,8 @@ class SlotInspector:
             annotation_layout.draw(rendered, slot, label)
             records.append({"row": slot.row, "column": slot.column, "prediction": label, "confidence": round(confidence, 6) if confidence is not None else None, "center_x": round(slot.original_center[0], 2), "center_y": round(slot.original_center[1], 2), "crop_center_x": round(crop_center[0], 2), "crop_center_y": round(crop_center[1], 2)})
         counts = {label: sum(item["prediction"] == label for item in records) for label in ("TLens", "Empty", "Uncertain", "Excluded")}
-        quality = assess_blur(image, blur_threshold)
-        result = {"image": str(path), "tray_type": tray_type, "rows": TRAY_CONFIGS[tray_type]["rows"], "columns": TRAY_CONFIGS[tray_type]["columns"], "total_positions": len(records), "classified_positions": len(records) - counts["Excluded"], "excluded_count": counts["Excluded"], "occupied_count": counts["TLens"], "empty_count": counts["Empty"], "uncertain_count": counts["Uncertain"], "inspection_status": "review_required" if counts["Uncertain"] or quality["is_severely_blurred"] else "complete", "image_quality": quality, "dark_housing_threshold": dark_housing_threshold, "slots": records, "occupancy_matrix": matrix}
+        quality = assess_blur(image, TRAY_CONFIGS[tray_type]["blur_threshold"] if blur_threshold is None else blur_threshold)
+        result = {"image": str(path), "tray_type": tray_type, "rows": TRAY_CONFIGS[tray_type]["rows"], "columns": TRAY_CONFIGS[tray_type]["columns"], "total_positions": len(records), "classified_positions": len(records) - counts["Excluded"], "excluded_count": counts["Excluded"], "occupied_count": counts["TLens"], "empty_count": counts["Empty"], "uncertain_count": counts["Uncertain"], "inspection_status": "review_required" if counts["Uncertain"] or quality["is_severely_blurred"] else "complete", "image_quality": quality, "dark_housing_threshold": dark_housing_threshold, "full_frame": full_frame, "recenter_apertures": recenter_apertures, "slots": records, "occupancy_matrix": matrix}
         result.update(sticker)
         if sticker["qr_status"] != "decoded":
             result["inspection_status"] = "review_required"
@@ -122,7 +118,7 @@ class SlotInspector:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(); parser.add_argument("--model-dir", type=Path, default=Path("models/tlens-dinov2")); parser.add_argument("--image", type=Path); parser.add_argument("--input-dir", type=Path); parser.add_argument("--tray-type", choices=(*TRAY_CONFIGS, "auto"), required=True, help="auto detects each image's tray type from its grid pitch"); parser.add_argument("--output-dir", type=Path, default=Path("outputs/inspection")); parser.add_argument("--confidence", type=float, default=.8); parser.add_argument("--batch-size", type=int, default=32); parser.add_argument("--blur-threshold", type=float, default=100.); parser.add_argument("--full-frame", action="store_true"); parser.add_argument("--dark-housing-threshold", type=float)
+    parser = argparse.ArgumentParser(); parser.add_argument("--model-dir", type=Path, default=Path("models/tlens-dinov2")); parser.add_argument("--image", type=Path); parser.add_argument("--input-dir", type=Path); parser.add_argument("--tray-type", choices=(*TRAY_CONFIGS, "auto"), required=True, help="auto detects each image's tray type from its grid pitch"); parser.add_argument("--output-dir", type=Path, default=Path("outputs/inspection")); parser.add_argument("--confidence", type=float, default=.8); parser.add_argument("--batch-size", type=int, default=32); parser.add_argument("--blur-threshold", type=float, help="Override the per-tray-type blur threshold"); parser.add_argument("--full-frame", action="store_true"); parser.add_argument("--dark-housing-threshold", type=float)
     parser.add_argument("--recenter-apertures", nargs="*", choices=tuple(TRAY_CONFIGS),
                         help="Recenter on visible apertures; optionally list the tray types to apply it to (default: all)")
     for tray_type in TRAY_CONFIGS:
@@ -190,7 +186,7 @@ def main(argv: list[str] | None = None) -> None:
         json_output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         if args.summary:
             print(f"{path.name}: Tray={tray_type} Lot={result['lot_number'] or 'unreadable'} TLens={result['occupied_count']} Empty={result['empty_count']} "
-                  f"Uncertain={result['uncertain_count']} Excluded={result['excluded_count']} time={result['inference_seconds']:.2f}s")
+                  f"Uncertain={result['uncertain_count']} Excluded={result['excluded_count']} time={result['inference_seconds']:.2f}s json={json_output}")
         else:
             results.append(result)
     if not args.summary:

@@ -115,6 +115,37 @@ options, including DINOv2 INT8 inference. It supports `--tray-type auto` with
 `--bare-model-dir` and `--packaged-model-dir`; `--recenter-apertures bare`
 limits recentering to bare trays.
 
+## Desktop app
+
+`desktop/` is an Electron front end for `run.py`, made for line operators:
+**Inspect a folder** or **Inspect one image** starts right away, a status banner
+says what is happening (getting ready, inspecting N of M, done and saved,
+stopped, failed), and trays that need checking open with the reason and the
+uncertain slots outlined. The tray type (Auto by default), output folder and
+confidence are under **Settings**. It runs this repo's `.venv` Python, so do `uv sync`
+first and keep the models in `models/`. Node.js 20+ is required.
+
+```powershell
+cd desktop
+npm install
+npm start
+```
+
+To fix a wrong classification, select a tray, choose **Fix slots**, click slots
+to switch them between lens and empty (an uncertain slot becomes lens), then
+**Save**. With no changes the button reads **Mark as checked**; it stays
+disabled while uncertain slots remain.
+This runs `python -m src.corrections <json> --set ROW,COLUMN=LABEL ...`, which
+can also be used directly. It updates the JSON counts and occupancy matrix,
+keeps the classifier's answer in `model_prediction` on each changed slot, sets
+`corrected_count` and `reviewed_at`, and redraws the annotated image from the
+source image (which must still exist at its recorded path). Status becomes
+`reviewed` unless uncertain slots remain or the QR code was unreadable.
+
+The first `npm start` downloads the Electron runtime. If Electron starts as plain
+Node (for example from a tool that sets `ELECTRON_RUN_AS_NODE`), clear that
+variable first.
+
 ## Train or continue training
 
 ```powershell

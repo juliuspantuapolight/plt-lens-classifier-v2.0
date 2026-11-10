@@ -30,3 +30,7 @@ htmlcov/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Desktop app
+/desktop/node_modules/
+/desktop/out/

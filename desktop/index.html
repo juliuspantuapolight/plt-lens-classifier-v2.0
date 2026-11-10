@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file:; style-src 'self'; script-src 'self'">
+  <title>Tray Inspector</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Display-only contrast stretch for dark bare trays: greys 35–100 map to 0–255. -->
+  <svg class="defs" aria-hidden="true" focusable="false">
+    <filter id="enhance-dark" color-interpolation-filters="sRGB">
+      <feComponentTransfer>
+        <feFuncR type="linear" slope="3.92" intercept="-0.538"></feFuncR>
+        <feFuncG type="linear" slope="3.92" intercept="-0.538"></feFuncG>
+        <feFuncB type="linear" slope="3.92" intercept="-0.538"></feFuncB>
+      </feComponentTransfer>
+    </filter>
+  </svg>
+
+  <header class="topbar">
+    <span class="app-name">Tray Inspector</span>
+    <span id="env" class="env">● Getting ready…</span>
+  </header>
+
+  <div class="layout">
+    <aside class="column side">
+      <section class="card">
+        <h2 class="step">Inspect trays</h2>
+        <button id="pick-folder" type="button" class="primary big">Inspect a folder</button>
+        <button id="pick-image" type="button" class="secondary big">Inspect one image</button>
+        <p class="hint">Choose a folder of tray photos (subfolders included) or a single photo. Inspection starts right away.</p>
+
+        <div id="source" class="source" hidden>
+          <span class="source-label" id="source-kind">Selected folder</span>
+          <strong id="source-name" class="source-name"></strong>
+          <span id="source-path" class="source-path"></span>
+          <button id="rerun" type="button" class="secondary">Inspect again</button>
+        </div>
+      </section>
+
+      <section class="card" id="summary-card" hidden>
+        <h2>Summary</h2>
+        <div class="stats">
+          <div class="stat ok"><strong id="stat-ok">0</strong><span>OK</span></div>
+          <div class="stat check"><strong id="stat-check">0</strong><span>To check</span></div>
+          <div class="stat"><strong id="stat-checked">0</strong><span>Checked by you</span></div>
+          <div class="stat"><strong id="stat-skipped">0</strong><span>Skipped</span></div>
+        </div>
+        <span class="hint" id="stat-types"></span>
+      </section>
+
+      <details class="card settings">
+        <summary>Settings</summary>
+        <div class="settings-body">
+          <fieldset class="field">
+            <legend>Tray type</legend>
+            <div class="segmented" id="tray">
+              <button type="button" data-tray="auto" aria-pressed="true">Auto</button>
+              <button type="button" data-tray="bare" aria-pressed="false">Bare</button>
+              <button type="button" data-tray="packaged" aria-pressed="false">Packaged</button>
+            </div>
+            <span class="hint">Keep on Auto unless a tray is skipped.</span>
+          </fieldset>
+          <div class="field">
+            <label for="output">Save results in</label>
+            <input id="output" type="text" spellcheck="false">
+            <button id="pick-output" type="button" class="secondary">Change folder</button>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="confidence">Confidence</label>
+              <input id="confidence" type="number" min="0" max="1" step="0.05" value="0.8">
+            </div>
+            <div class="field">
+              <label for="threads">CPU threads</label>
+              <input id="threads" type="number" min="1" max="64" step="1" value="4">
+            </div>
+          </div>
+        </div>
+      </details>
+    </aside>
+
+    <main class="column center">
+      <section id="banner" class="banner idle" role="status" aria-live="polite">
+        <div class="banner-text">
+          <strong id="banner-title">Choose a folder or image to start</strong>
+          <span id="banner-detail">Use “Inspect a folder” on the left.</span>
+        </div>
+        <div class="banner-progress" id="banner-progress" hidden>
+          <div class="progress" role="progressbar" aria-labelledby="banner-title" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress"><div id="progress-bar"></div></div>
+        </div>
+        <div class="banner-actions">
+          <button id="stop" type="button" class="secondary" hidden>Stop</button>
+          <button id="show-check" type="button" class="primary" hidden>Show trays to check</button>
+          <button id="open-output" type="button" class="secondary" hidden>Open results folder</button>
+          <button id="show-details" type="button" class="secondary" hidden>Show details</button>
+        </div>
+      </section>
+
+      <section class="card viewer" id="viewer">
+        <div class="viewer-head">
+          <div class="viewer-title">
+            <h2 id="viewer-name" class="mono">No tray selected</h2>
+            <span id="viewer-meta" class="hint">Results appear here while the inspection runs.</span>
+          </div>
+          <label class="toggle" id="enhance-label" hidden>
+            <input id="enhance" type="checkbox">
+            Brighten dark tray
+          </label>
+        </div>
+        <div id="verdict" class="verdict" hidden></div>
+        <div class="viewer-image" id="viewer-area">
+          <div class="stage" id="stage" hidden>
+            <img id="viewer-img" alt="">
+            <svg id="overlay" class="overlay" hidden></svg>
+          </div>
+          <p class="placeholder" id="viewer-placeholder">The tray photo with its marks appears here.<br>Green ring = lens · Red box = empty · Yellow box = not sure</p>
+        </div>
+        <div class="viewer-foot" id="viewer-foot" hidden>
+          <div class="viewer-counts">
+            <div><strong id="viewer-tlens" class="good"></strong><span>Lenses</span></div>
+            <div><strong id="viewer-empty" class="bad"></strong><span>Empty</span></div>
+            <div><strong id="viewer-uncertain"></strong><span>Not sure</span></div>
+          </div>
+          <div class="viewer-actions" id="viewer-actions">
+            <button id="edit" type="button" class="primary">Fix slots</button>
+            <button id="open-folder" type="button" class="secondary">Open lot folder</button>
+          </div>
+          <div class="edit-bar" id="edit-bar" hidden>
+            <span class="hint">Click a slot to switch between <strong>lens</strong> and <strong>empty</strong>. Blue = changed. <strong id="edit-count">No changes yet</strong></span>
+            <div class="viewer-actions">
+              <button id="discard" type="button" class="secondary">Cancel</button>
+              <button id="save" type="button" class="primary">Save</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <details class="log-box" id="log-box">
+        <summary>Technical details</summary>
+        <div id="log" class="log"></div>
+      </details>
+    </main>
+
+    <aside class="column results-column">
+      <section class="card results">
+        <div class="card-head padded">
+          <h2>Trays</h2>
+          <div class="chips" id="filters">
+            <button type="button" data-filter="all" aria-pressed="true">All <span id="count-all">0</span></button>
+            <button type="button" data-filter="check" aria-pressed="false">To check <span id="count-check">0</span></button>
+            <button type="button" data-filter="skipped" aria-pressed="false">Skipped <span id="count-skipped">0</span></button>
+          </div>
+        </div>
+        <div class="table-box">
+          <table>
+            <thead>
+              <tr>
+                <th>Photo</th><th>Tray</th>
+                <th class="num">Lenses</th><th class="num">Empty</th><th>Result</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <p id="empty-table" class="empty">No trays inspected yet.</p>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="renderer.js"></script>
+</body>
+</html>

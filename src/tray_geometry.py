@@ -7,10 +7,13 @@ import cv2
 import numpy as np
 
 
+# blur_threshold: Laplacian variance below this flags the image as blurred. Sharp full-resolution images score
+# about 3.4-5.1 (bare) and 5.9-9.1 (packaged); a sigma-1 Gaussian blur drops them to about 2.3 and 2.9.
+# shortcut: set from simulated blur only; recheck against real out-of-focus photos from the line.
 TRAY_CONFIGS = {
-    "packaged": {"rows": 17, "columns": 15, "left": 0.09, "right": 0.91, "top": 0.075, "bottom": 0.915,
+    "packaged": {"rows": 17, "columns": 15, "left": 0.09, "right": 0.91, "top": 0.075, "bottom": 0.915, "blur_threshold": 4.5,
                  "always_empty": ((1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2))},
-    "bare": {"rows": 20, "columns": 20, "left": 0.08, "right": 0.92, "top": 0.079, "bottom": 0.918,
+    "bare": {"rows": 20, "columns": 20, "left": 0.08, "right": 0.92, "top": 0.079, "bottom": 0.918, "blur_threshold": 2.8,
              "excluded": tuple((row, column) for row in range(1, 7) for column in range(1, 5))},
 }
 
@@ -72,6 +75,11 @@ def detect_tray_corners(image: np.ndarray, minimum_area_ratio: float = 0.2) -> n
     approximation = cv2.approxPolyDP(contour, 0.02 * cv2.arcLength(contour, True), True)
     points = approximation.reshape(-1, 2) if len(approximation) == 4 else cv2.boxPoints(cv2.minAreaRect(contour))
     return _order_corners(points)
+
+
+def full_frame_corners(image: np.ndarray) -> np.ndarray:
+    height, width = image.shape[:2]
+    return np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
 
 
 def align_tray(image: np.ndarray, corners: np.ndarray | None = None, output_size: tuple[int, int] = (1600, 1600)) -> Alignment:

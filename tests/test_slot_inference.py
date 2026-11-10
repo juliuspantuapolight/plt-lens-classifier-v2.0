@@ -102,3 +102,13 @@ def test_sticker_positions_are_neither_classified_nor_rendered(tiny_classifier, 
         assert result["occupancy_matrix"][slot["row"] - 1][slot["column"] - 1] == "Excluded"
         x, y = round(slot["center_x"]), round(slot["center_y"])
         assert not rendered[y-10:y+10, x-10:x+10].any()
+
+
+@pytest.mark.parametrize("tray_type", ["packaged", "bare"])
+def test_blur_threshold_defaults_to_tray_type_and_can_be_overridden(tiny_classifier, tmp_path, tray_type):
+    image = tmp_path / "tray.png"
+    cv2.imwrite(str(image), np.zeros((400, 400, 3), dtype=np.uint8))
+    inspector = SlotInspector("unused")
+
+    assert inspector.inspect(image, tray_type, True, None)[0]["image_quality"]["threshold"] == TRAY_CONFIGS[tray_type]["blur_threshold"]
+    assert inspector.inspect(image, tray_type, True, 50.)[0]["image_quality"]["threshold"] == 50.

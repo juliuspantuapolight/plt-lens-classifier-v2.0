@@ -17,7 +17,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--cpu-threads", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--confidence", type=float, default=.8)
-    parser.add_argument("--blur-threshold", type=float, default=100.)
+    parser.add_argument("--blur-threshold", type=float, help="Override the per-tray-type default (bare 2.8, packaged 4.5)")
     parser.add_argument("--full-frame", action=argparse.BooleanOptionalAction, default=True,
                         help="Use current camera framing; --no-full-frame detects tray boundaries")
     parser.add_argument("--recenter-apertures", action=argparse.BooleanOptionalAction, default=None,
@@ -35,8 +35,9 @@ def main(argv: list[str] | None = None) -> None:
     command = ["--tray-type", args.tray,
                "--input-dir" if args.input.is_dir() else "--image", str(args.input),
                "--output-dir", str(args.output_dir), "--cpu-threads", str(args.cpu_threads),
-               "--batch-size", str(args.batch_size), "--confidence", str(args.confidence),
-               "--blur-threshold", str(args.blur_threshold), "--summary"]
+               "--batch-size", str(args.batch_size), "--confidence", str(args.confidence), "--summary"]
+    if args.blur_threshold is not None:
+        command += ["--blur-threshold", str(args.blur_threshold)]
     if args.tray == "auto":
         for tray, model_dir in model_dirs.items():
             command += [f"--{tray}-model-dir", str(model_dir)]
