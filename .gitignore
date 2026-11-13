@@ -18,7 +18,6 @@ htmlcov/
 # Datasets, trained models, and generated inspection artifacts
 /assets/
 /data/
-/models/
 /outputs/
 /*_annotated.jpg
 /*_annotated.png

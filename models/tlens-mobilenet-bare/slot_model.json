@@ -1,0 +1,8 @@
+{
+  "architecture": "mobilenet_v3_small",
+  "image_size": 224,
+  "labels": [
+    "Empty",
+    "TLens"
+  ]
+}
