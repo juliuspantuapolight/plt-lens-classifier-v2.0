@@ -500,7 +500,7 @@ api.on('worker', renderEnv);
 
 api.status().then((status) => {
   $('output').value = status.defaultOutput;
-  if (!status.python) envProblems.push('Not installed correctly: Python environment missing (run “uv sync”)');
+  if (!status.python) envProblems.push('Not installed correctly: inspection worker missing');
   for (const [tray, ok] of Object.entries(status.models)) if (!ok) envProblems.push(`${tray} model missing`);
   renderEnv(status.worker);
   setControlsDisabled(!status.python);

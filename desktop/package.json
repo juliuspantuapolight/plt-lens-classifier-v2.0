@@ -2,12 +2,13 @@
   "name": "tray-inspector-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Desktop front end for run.py: pick images, run the inspection, review results.",
-  "main": "main.js",
+  "description": "Desktop front end for run.py (Tauri): pick images, run the inspection, review results.",
   "scripts": {
-    "start": "electron ."
+    "start": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
   },
   "devDependencies": {
-    "electron": "^45.2.3"
+    "@tauri-apps/cli": "^2"
   }
 }

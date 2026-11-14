@@ -39,6 +39,8 @@ def run_job(line: str) -> int:
 
 
 def main() -> None:
+    # Live per-image progress through the pipe, and paths/lot names intact whatever the Windows code page.
+    sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
     sys.stderr = sys.stdout  # one stream keeps log lines in order with the @@done marker
     warm_up()
     print("@@ready", flush=True)

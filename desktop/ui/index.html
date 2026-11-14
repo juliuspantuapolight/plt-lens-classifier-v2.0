@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file:; style-src 'self'; script-src 'self'">
   <title>Tray Inspector</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -170,6 +169,7 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="bridge.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -117,18 +117,39 @@ limits recentering to bare trays.
 
 ## Desktop app
 
-`desktop/` is an Electron front end for `run.py`, made for line operators:
+`desktop/` is a Tauri front end for `run.py`, made for line operators:
 **Inspect a folder** or **Inspect one image** starts right away, a status banner
 says what is happening (getting ready, inspecting N of M, done and saved,
 stopped, failed), and trays that need checking open with the reason and the
 uncertain slots outlined. The tray type (Auto by default), output folder and
-confidence are under **Settings**. It runs this repo's `.venv` Python, so do `uv sync`
-first and keep the models in `models/`. Node.js 20+ is required.
+confidence are under **Settings**; results go to `Documents\Tray Inspector` by
+default.
+
+The window (`desktop/ui/`) talks to a small Rust shell (`desktop/src-tauri/`),
+which runs the frozen worker from [the next section](#onnx-models-and-the-standalone-worker)
+with the ONNX models. The installer bundles the worker and models, so target PCs
+need no Python, PyTorch or Node.js; Windows 10/11 already has the WebView2
+runtime it uses.
+
+Build the installer (`desktop\src-tauri\target\release\bundle\nsis\Tray Inspector_<version>_x64-setup.exe`,
+about 70 MB). It rebuilds the worker first, so export the ONNX models before:
 
 ```powershell
 cd desktop
 npm install
-npm start
+npm run build
+```
+
+`npm start` opens a development build instead; it uses the existing
+`desktop\worker-dist`, so run `scripts\build_worker.ps1` once first.
+Building needs Node.js 20+ and Rust. The standard Rust toolchain also needs the
+Visual Studio C++ Build Tools (admin rights). Without them, use the GNU toolchain
+and MinGW-w64, which install per user:
+
+```powershell
+winget install Rustlang.Rustup BrechtSanders.WinLibs.POSIX.UCRT
+rustup toolchain install stable-x86_64-pc-windows-gnu
+$env:RUSTUP_TOOLCHAIN = 'stable-x86_64-pc-windows-gnu'   # then npm run build
 ```
 
 To fix a wrong classification, select a tray, choose **Fix slots**, click slots
@@ -142,9 +163,31 @@ keeps the classifier's answer in `model_prediction` on each changed slot, sets
 source image (which must still exist at its recorded path). Status becomes
 `reviewed` unless uncertain slots remain or the QR code was unreadable.
 
-The first `npm start` downloads the Electron runtime. If Electron starts as plain
-Node (for example from a tool that sets `ELECTRON_RUN_AS_NODE`), clear that
-variable first.
+## ONNX models and the standalone worker
+
+Inspection uses `model.onnx` when a model folder has one, and needs neither
+PyTorch nor transformers for it. On the 2644003 sample trays it gives the same
+counts as `model.pt` and classifies about a third faster. After training or
+retraining a MobileNet model, export it again:
+
+```powershell
+uv run python scripts/export_onnx.py models/tlens-mobilenet-bare models/tlens-mobilenet
+```
+
+The script stops with an error if ONNX and PyTorch probabilities differ by more
+than 0.001. Without `model.onnx` the folder loads through PyTorch as before.
+
+`uv sync` installs everything (inspection runtime plus the `train` and `dev`
+groups). To freeze the inspection worker for deployment, without Python or
+PyTorch on the target PC (about 210 MB):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_worker.ps1
+```
+
+It builds in a separate `.venv-build` that has no PyTorch and writes
+`desktop\worker-dist\tray-worker\tray-worker.exe`. Run the `.exe` with the
+folder containing `models\` as the working directory.
 
 ## Train or continue training
 

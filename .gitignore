@@ -33,3 +33,10 @@ Thumbs.db
 # Desktop app
 /desktop/node_modules/
 /desktop/out/
+/desktop/src-tauri/target/
+/desktop/src-tauri/gen/
+
+# Torch-free build environment and frozen worker (scripts/build_worker.ps1)
+/.venv-build/
+/build/
+/desktop/worker-dist/

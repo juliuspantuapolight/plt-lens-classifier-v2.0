@@ -11,8 +11,12 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
-from transformers import AutoImageProcessor, AutoModelForImageClassification
+
+try:  # training extras: the desktop sidecar ships without them and runs model.onnx instead
+    import torch
+    from transformers import AutoImageProcessor, AutoModelForImageClassification
+except ImportError:
+    torch = None
 
 from src.image_quality import assess_blur
 from src.inspection_io import collect_input_images, inspection_output_paths, write_slot_csv
@@ -27,9 +31,20 @@ class SlotInspector:
                  cpu_int8: bool = False, cpu_threads: int | None = None):
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
+        if cpu_threads is not None and cpu_threads < 1:
+            raise ValueError("cpu_threads must be positive")
+        self.confidence_threshold, self.batch_size = confidence_threshold, batch_size
+        self.onnx = None
+        if (Path(model_dir) / "model.onnx").exists():  # preferred: same weights, no torch needed
+            if cpu_int8:
+                raise ValueError("--cpu-int8 is currently supported for DINOv2 only.")
+            from src.onnx_classifier import OnnxClassifier
+            self.onnx = OnnxClassifier(Path(model_dir), cpu_threads)
+            self.labels, self.architecture, self.device, self.cpu_int8 = self.onnx.labels, "mobilenet_v3_small_onnx", "cpu", False
+            return
+        if torch is None:
+            raise ValueError(f"No model.onnx in {model_dir}, and PyTorch is not installed to load another model format.")
         if cpu_threads is not None:
-            if cpu_threads < 1:
-                raise ValueError("cpu_threads must be positive")
             torch.set_num_threads(cpu_threads)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if cpu_int8 and self.device.type != "cpu":
@@ -51,17 +66,20 @@ class SlotInspector:
                 self.model, {torch.nn.Linear}, dtype=torch.qint8,
             )
         self.cpu_int8 = cpu_int8
-        self.confidence_threshold, self.batch_size = confidence_threshold, batch_size
+        self.labels = self.model.config.id2label
 
-    @torch.inference_mode()
     def classify(self, crops: list[np.ndarray]) -> list[tuple[str, float]]:
         results = []
         for start in range(0, len(crops), self.batch_size):
             images = [cv2.cvtColor(crop, cv2.COLOR_BGR2RGB) for crop in crops[start:start + self.batch_size]]
-            inputs = self.processor(images=images, return_tensors="pt").to(self.device)
-            probabilities = torch.softmax(self.model(**inputs).logits, dim=-1).cpu().numpy()
+            if self.onnx is not None:
+                probabilities = self.onnx.probabilities(images)
+            else:
+                with torch.inference_mode():
+                    inputs = self.processor(images=images, return_tensors="pt").to(self.device)
+                    probabilities = torch.softmax(self.model(**inputs).logits, dim=-1).cpu().numpy()
             for row in probabilities:
-                index = int(row.argmax()); results.append((self.model.config.id2label[index], float(row[index])))
+                index = int(row.argmax()); results.append((self.labels[index], float(row[index])))
         return results
 
     def inspect(self, image_path: str | Path, tray_type: str, full_frame: bool, blur_threshold: float | None,
@@ -113,7 +131,7 @@ class SlotInspector:
         timings["quality_and_rendering"] = time.perf_counter() - started
         result["timings_seconds"] = {name: round(seconds, 4) for name, seconds in timings.items()}
         result["runtime"] = {"architecture": self.architecture, "device": str(self.device), "precision": "dynamic_int8" if self.cpu_int8 else "float32",
-                             "batch_size": self.batch_size, "cpu_threads": torch.get_num_threads()}
+                             "batch_size": self.batch_size, "cpu_threads": torch.get_num_threads() if self.onnx is None else self.onnx.cpu_threads}
         return result, rendered
 
 
