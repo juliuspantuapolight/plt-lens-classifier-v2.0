@@ -13,6 +13,7 @@ from pathlib import Path
 
 import cv2
 
+from src.inspection_io import write_slot_csv
 from src.inspection_rendering import AnnotationLayout
 from src.tray_geometry import align_tray, extract_slots, full_frame_corners, recenter_slot_apertures
 
@@ -86,6 +87,7 @@ def apply_corrections(json_path: Path, corrections: dict[tuple[int, int], str]) 
         raise RuntimeError("Could not encode the annotated image.")
     _write_atomically(Path(result["annotated_image"]), encoded.tobytes())
     _write_atomically(json_path, json.dumps(result, indent=2).encode("utf-8"))
+    write_slot_csv(result, json_path.with_suffix(".csv"))
     return result
 
 

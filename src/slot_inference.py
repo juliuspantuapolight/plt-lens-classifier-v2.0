@@ -15,7 +15,7 @@ import torch
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 from src.image_quality import assess_blur
-from src.inspection_io import collect_input_images, inspection_output_paths
+from src.inspection_io import collect_input_images, inspection_output_paths, write_slot_csv
 from src.inspection_rendering import AnnotationLayout
 from src.sticker_qr import read_sticker_qr
 from src.tray_geometry import (TRAY_CONFIGS, align_tray, detect_tray_type, extract_slots, full_frame_corners,
@@ -184,6 +184,7 @@ def main(argv: list[str] | None = None) -> None:
         result["annotated_image"] = str(image_output)
         result["result_json"] = str(json_output)
         json_output.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        write_slot_csv(result, json_output.with_suffix(".csv"))
         if args.summary:
             print(f"{path.name}: Tray={tray_type} Lot={result['lot_number'] or 'unreadable'} TLens={result['occupied_count']} Empty={result['empty_count']} "
                   f"Uncertain={result['uncertain_count']} Excluded={result['excluded_count']} time={result['inference_seconds']:.2f}s json={json_output}")
